@@ -1,15 +1,20 @@
-//***************************************************************************************************************************************
-/* Librería para el uso de la pantalla ILI9341 en modo SPI
- * Basado en el código de martinayotte - https://www.stm32duino.com/viewtopic.php?t=637
- * Adaptación, migración y creación de nuevas funciones: Pablo Mazariegos y José Morales
- * Con ayuda de: José Guerra
- * IE3027: Electrónica Digital 2 - 2019
- */
-//***************************************************************************************************************************************
+//********************************************************************************
+//Universidad del Valle de Guatemala
+//BE3015 Electrónica Digital 2
+//Karla Melissa López
+//Proyecto 2 - Sensor de presión y temperatura
+//********************************************************************************
+
+//********************************************************************************
+//Librerías
+//********************************************************************************
+#include <SPI.h> //se incluye la libreria de la comunicacion SPI entre la tiva y la pantalla
+#include <SD.h>  //Se incluye la libreria de la SD
+
+//se incluye las librerias para la pantalla
 #include <stdint.h>
 #include <stdbool.h>
 #include <TM4C123GH6PM.h>
-#include <SPI.h>
 #include "inc/hw_ints.h"
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
@@ -21,21 +26,43 @@
 #include "driverlib/sysctl.h"
 #include "driverlib/timer.h"
 
+//se incluye las librerias para los graficos, fuentes y elemntos
 #include "bitmaps.h"
 #include "font.h"
 #include "lcd_registers.h"
 
-// El SPI es el 0
-//MOSI va a PA_5
-//MISO va a PA_4
-//SCK va a PA_2
+//********************************************************************************
+//Variables
+//********************************************************************************
+#define btn1 PF_0 //  boton 1
+#define btn2 PF_4 //  boton 2
 
+//  Pines para la pantalla
 #define LCD_RST PD_0
-#define LCD_DC PD_1
-#define LCD_CS PA_3
+#define LCD_CS PD_1
+#define LCD_RS PD_2
+#define LCD_WR PD_3
+#define LCD_RD PE_1
+int DPINS[] = {PB_0, PB_1, PB_2, PB_3, PB_4, PB_5, PB_6, PB_7};
+
+#define pinBuzzer PB_5 //  buzzer
+
+//  Notas musicales para el buzzer
+#define NOTE_A3 220
+#define NOTE_AS3 233
+#define NOTE_B3 247
+#define NOTE_C4 262
+#define NOTE_CS4 277
+#define NOTE_D4 294
+#define NOTE_DS4 311
+#define NOTE_E4 330
+#define NOTE_F4 349
+#define NOTE_FS4 370
+
 //***************************************************************************************************************************************
 // Functions Prototypes
 //***************************************************************************************************************************************
+//  Funciones incluidas en el ejemplo de la pantalla
 void LCD_Init(void);
 void LCD_CMD(uint8_t cmd);
 void LCD_DATA(uint8_t data);
@@ -46,96 +73,180 @@ void V_line(unsigned int x, unsigned int y, unsigned int l, unsigned int c);
 void Rect(unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int c);
 void FillRect(unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int c);
 void LCD_Print(String text, int x, int y, int fontSize, int color, int background);
-
 void LCD_Bitmap(unsigned int x, unsigned int y, unsigned int width, unsigned int height, unsigned char bitmap[]);
-void LCD_Sprite(int x, int y, int width, int height, unsigned char bitmap[],int columns, int index, char flip, char offset);
+void LCD_Sprite(int x, int y, int width, int height, unsigned char bitmap[], int columns, int index, char flip, char offset);
+
+//  Funcion para traer la matriz del fondo
+extern uint8_t fondoP[];
+
+int nuevoDato = 0;
+int subirDato = 0;
+int Patm = 0;
+String Pa = "";
+int buzzerPin = 40;
+
+int melody1[] = {
+    //  Melodia para nuevo dato
+    NOTE_A3,
+    NOTE_C4,
+    NOTE_B3,
+    NOTE_E4,
+    NOTE_AS3,
+};
+
+int noteDurations1[] = {
+    //  Duración para nuevo dato
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+};
+
+int melody2[] = {
+    //  Melodia para guardar dato
+    NOTE_E4,
+    NOTE_AS3,
+    NOTE_FS4,
+    NOTE_F4,
+    NOTE_E4,
+    NOTE_A3,
+};
+
+int noteDurations2[] = {
+    //  Duracion para guardar dato
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+};
+
+File myFile; //  Guardar datos en SD
 
 //***************************************************************************************************************************************
 // Inicialización
 //***************************************************************************************************************************************
-void setup() {
-  SysCtlClockSet(SYSCTL_SYSDIV_2_5|SYSCTL_USE_PLL|SYSCTL_OSC_MAIN|SYSCTL_XTAL_16MHZ);
-  Serial.begin(9600);
-  SPI.setModule(0);
 
-  Serial.println("Inicio");
+void setup()
+{
+  SysCtlClockSet(SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
+  Serial.begin(115200); //  Comunicacion serial
+  Serial3.begin(115200);
+
+  pinMode(PA_3, OUTPUT); //  Configuracion para SD
+  SPI.setModule(0);
+  if (!SD.begin(PA_3))
+  {
+    Serial.println("initialization failed!");
+    return;
+  }
+  Serial.println("initialization done.");
+
+  Serial.println("Initializing SD card... done");
+  pinMode(btn1, INPUT_PULLUP); //  botones de la Tiva
+  pinMode(btn2, INPUT_PULLUP); //  botones de la  Tiva
+
+  pinMode(buzzerPin, OUTPUT); //  Salida del buzzer
+
+  SysCtlClockSet(SYSCTL_SYSDIV_2_5 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
+  GPIOPadConfigSet(GPIO_PORTB_BASE, 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7, GPIO_STRENGTH_8MA, GPIO_PIN_TYPE_STD_WPU);
+
+  Serial.println("Sensor de presion");
+
+  //  Configuracion de inicio de la pantalla
   LCD_Init();
   LCD_Clear(0x00);
-  
-  FillRect(0, 0, 319, 206, 0x421b);
-  String text1 = "Aqui mandandole";
-  LCD_Print(text1, 10, 100, 2, 0xffff, 0x421b);
+  LCD_Bitmap(0, 0, 319, 239, fondoP);
+  String text1 = "Sensor de presion";
+  LCD_Print(text1, 20, 20, 2, 0xffff, 0x421b);
 
-  String text2 = "un saludo al";
-  LCD_Print(text2, 10, 140, 2, 0xffff, 0x421b);
-
-  String text3 = "   totio";
-  LCD_Print(text3, 20, 180, 2, 0xffff, 0x421b);
-  
-  for(int x = 0; x <319; x++){
-    LCD_Bitmap(x, 52, 16, 16, tile2);
-    LCD_Bitmap(x, 68, 16, 16, tile);
-    
-    LCD_Bitmap(x, 207, 16, 16, tile);
-    LCD_Bitmap(x, 223, 16, 16, tile);
-    x += 15;
- }
-  delay(5000);
+  delay(1000);
 }
 //***************************************************************************************************************************************
 // Loop Infinito
 //***************************************************************************************************************************************
-void loop() {
-  
-  for(int x = 0; x <320-32; x++){
-    delay(15);
-    int anim2 = (x/35)%2;
-    
-    LCD_Sprite(x,100,16,24,planta,2,anim2,0,1);
-    V_line( x -1, 100, 24, 0x421b);
-    
-    //LCD_Bitmap(x, 100, 32, 32, prueba);
-    
-    int anim = (x/11)%8;
-    
+void loop()
+{
 
-    int anim3 = (x/11)%4;
-    
-    LCD_Sprite(x, 20, 16, 32, mario,8, anim,1, 0);
-    V_line( x -1, 20, 32, 0x421b);
- 
-    //LCD_Sprite(x,100,32,32,bowser,4,anim3,0,1);
-    //V_line( x -1, 100, 32, 0x421b);
- 
- 
-    LCD_Sprite(x, 140, 16, 16, enemy,2, anim2,1, 0);
-    V_line( x -1, 140, 16, 0x421b);
-  
-    LCD_Sprite(x, 175, 16, 32, luigi,8, anim,1, 0);
-    V_line( x -1, 175, 32, 0x421b);
+  if (digitalRead(btn1) == LOW)
+  {
+    if (subirDato <= 0)
+    {
+      subirDato = subirDato + 1;
+      //Serial.println(subirDato);
+    }
   }
-  
-  for(int x = 320-32; x >0; x--){
-    delay(5);
-    int anim = (x/11)%8;
-    int anim2 = (x/11)%2;
-    
-    LCD_Sprite(x,100,16,24,planta,2,anim2,0,0);
-    V_line( x + 16, 100, 24, 0x421b);
-    
-    //LCD_Bitmap(x, 100, 32, 32, prueba);
-    
-    LCD_Sprite(x, 140, 16, 16, enemy,2, anim2,0, 0);
-    V_line( x + 16, 140, 16, 0x421b);
-    
-    LCD_Sprite(x, 175, 16, 32, luigi,8, anim,0, 0);
-    V_line( x + 16, 175, 32, 0x421b);
 
-    LCD_Sprite(x, 20, 16, 32, mario,8, anim,0, 0);
-    V_line( x + 16, 20, 32, 0x421b);
-  } 
+  if (subirDato == 1)
+  {
+    myFile = SD.open("PruebaFinal.csv", FILE_WRITE);
 
+    if (myFile)
+    {
+      Serial.println("Writing to data.csv...");
+      myFile.println(Pa.toInt());
+      myFile.close();
+      Serial.println(Pa);
+      Serial.println("done.");
+    }
+    else
+    {
+      Serial.println("error opening test.txt");
+    }
+
+    for (int thisNote = 0; thisNote < 7; thisNote++)
+    {
+
+      int noteDuration = 100 / noteDurations1[thisNote];
+      tone(buzzerPin, melody1[thisNote], noteDuration);
+
+      int pauseBetweenNotes = noteDuration + 50;
+      delay(pauseBetweenNotes);
+      noTone(buzzerPin);
+      subirDato = 0;
+    }
+  }
+
+  if (digitalRead(btn2) == LOW)
+  {
+    if (nuevoDato >= 0)
+    {
+      nuevoDato = nuevoDato + 1;
+      //Serial.println(nuevoDato);
+    }
+  }
+
+  if (nuevoDato == 1)
+  {
+    Pa = "";
+    if (Serial3.available() > 0)
+    {
+      Pa = Serial3.readStringUntil('\n');
+      Serial.println(Pa);
+      LCD_Print(Pa, 120, 110, 2, 0x001F, 0xFFFF);
+      delay(500);
+      for (int thisNote = 0; thisNote < 6; thisNote++)
+      {
+        int noteDuration = 100 / noteDurations2[thisNote];
+        tone(buzzerPin, melody2[thisNote], noteDuration);
+
+        int pauseBetweenNotes = noteDuration + 50;
+        delay(pauseBetweenNotes);
+        noTone(buzzerPin);
+      }
+
+      nuevoDato = 0;
+    }
+  }
+
+  delay(200);
 }
+
+
 //***************************************************************************************************************************************
 // Función para inicializar LCD
 //***************************************************************************************************************************************
