@@ -183,7 +183,7 @@ void loop()
 
   if (subirDato == 1)
   {
-    myFile = SD.open("PruebaFinal.csv", FILE_WRITE);
+    myFile = SD.open("prueba.csv", FILE_WRITE);
 
     if (myFile)
     {
@@ -195,7 +195,7 @@ void loop()
     }
     else
     {
-      Serial.println("error opening test.txt");
+      Serial.println("error opening File");
     }
 
     for (int thisNote = 0; thisNote < 7; thisNote++)
@@ -227,7 +227,7 @@ void loop()
     {
       Pa = Serial3.readStringUntil('\n');
       Serial.println(Pa);
-      LCD_Print(Pa, 175, 120, 1, 0x001F, 0xFFFF);
+      LCD_Print(Pa, 175, 125, 2, 0x001F, 0xFFFF);
       delay(500);
       for (int thisNote = 0; thisNote < 6; thisNote++)
       {
