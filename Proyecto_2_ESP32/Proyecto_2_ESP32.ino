@@ -12,6 +12,7 @@
 #include <LiquidCrystal.h>
 #include <Wire.h>
 #include <Adafruit_BMP085.h>
+#include <Adafruit_NeoPixel.h>
 
 //*****************************************************************************
 // Definición de pines
@@ -23,9 +24,12 @@
 #define en 12
 #define rs 13
 
+#define PIN 23
+#define MAX_BRIGHTNESS 255
 //*****************************************************************************
 // Prototipos de función
 //*****************************************************************************
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(1, 23, NEO_RGB + NEO_KHZ800);
 
 //*****************************************************************************
 // Variables Globales
